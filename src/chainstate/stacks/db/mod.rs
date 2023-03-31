@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use libc::read;
 use std::collections::{btree_map::Entry, BTreeMap, HashSet};
 use std::fmt;
 use std::fs;
@@ -2503,6 +2504,143 @@ impl StacksChainState {
             new_tip.block_hash()
         );
         Ok(new_tip_info)
+    }
+}
+
+impl StacksMessageCodec for StacksHeaderInfo {
+    fn consensus_serialize<W: Write>(&self, fd: &mut W) -> Result<(), codec_error>
+    where
+        Self: Sized,
+    {
+        write_next(fd, &self.anchored_header)?;
+        write_next(fd, &self.microblock_tail)?;
+        write_next(fd, &self.stacks_block_height)?;
+        write_next(fd, &self.index_root)?;
+        write_next(fd, &self.consensus_hash)?;
+        write_next(fd, &self.burn_header_hash)?;
+        write_next(fd, &self.burn_header_height)?;
+        write_next(fd, &self.burn_header_timestamp)?;
+        write_next(fd, &self.anchored_block_size)?;
+        Ok(())
+    }
+
+    fn consensus_deserialize<R: Read>(fd: &mut R) -> Result<Self, codec_error>
+    where
+        Self: Sized,
+    {
+        let anchored_header: StacksBlockHeader = read_next(fd)?;
+        let microblock_tail: Option<StacksMicroblockHeader> = read_next(fd)?;
+        let stacks_block_height: u64 = read_next(fd)?;
+        let index_root: TrieHash = read_next(fd)?;
+        let consensus_hash: ConsensusHash = read_next(fd)?;
+        let burn_header_hash: BurnchainHeaderHash = read_next(fd)?;
+        let burn_header_height: u32 = read_next(fd)?;
+        let burn_header_timestamp: u64 = read_next(fd)?;
+        let anchored_block_size: u64 = read_next(fd)?;
+        Ok(StacksHeaderInfo {
+            anchored_header,
+            microblock_tail,
+            stacks_block_height,
+            index_root,
+            consensus_hash,
+            burn_header_hash,
+            burn_header_height,
+            burn_header_timestamp,
+            anchored_block_size,
+        })
+    }
+}
+
+impl StacksMessageCodec for StacksEpochReceipt {
+    fn consensus_serialize<W: Write>(&self, fd: &mut W) -> Result<(), codec_error>
+    where
+        Self: Sized,
+    {
+        write_next(fd, &self.header)?;
+        write_next(fd, &self.tx_receipts)?;
+        write_next(fd, &self.matured_rewards)?;
+        write_next(fd, &self.matured_rewards_info)?;
+        write_next(fd, &self.parent_microblocks_cost)?;
+        write_next(fd, &self.anchored_block_cost)?;
+        write_next(fd, &self.parent_burn_block_hash)?;
+        write_next(fd, &self.parent_burn_block_height)?;
+        write_next(fd, &self.parent_burn_block_timestamp)?;
+        write_next(fd, &(self.evaluated_epoch as u32))?;
+        write_next(fd, &if self.epoch_transition { 1u8 } else { 0u8 })?;
+        Ok(())
+    }
+
+    fn consensus_deserialize<R: Read>(fd: &mut R) -> Result<Self, codec_error>
+    where
+        Self: Sized,
+    {
+        let header: StacksHeaderInfo = read_next(fd)?;
+        let tx_receipts: Vec<StacksTransactionReceipt> = read_next(fd)?;
+        let matured_rewards: Vec<MinerReward> = read_next(fd)?;
+        let matured_rewards_info: Option<MinerRewardInfo> = read_next(fd)?;
+        let parent_microblocks_cost: ExecutionCost = read_next(fd)?;
+        let anchored_block_cost: ExecutionCost = read_next(fd)?;
+        let parent_burn_block_hash: BurnchainHeaderHash = read_next(fd)?;
+        let parent_burn_block_height: u32 = read_next(fd)?;
+        let parent_burn_block_timestamp: u64 = read_next(fd)?;
+        let evaluated_epoch: u32 = read_next(fd)?;
+        let evaluated_epoch: StacksEpochId = match evaluated_epoch {
+            _x if evaluated_epoch == StacksEpochId::Epoch10 as u32 => StacksEpochId::Epoch10,
+            _x if evaluated_epoch == StacksEpochId::Epoch20 as u32 => StacksEpochId::Epoch20,
+            _x if evaluated_epoch == StacksEpochId::Epoch2_05 as u32 => StacksEpochId::Epoch2_05,
+            _x if evaluated_epoch == StacksEpochId::Epoch21 as u32 => StacksEpochId::Epoch21,
+            _ => {
+                warn!("Invalid block receipt: invalid evaluated epoch");
+                return Err(codec_error::DeserializeError(format!(
+                    "Failed to parse block receipt: invalid evaluated epoch {}",
+                    evaluated_epoch
+                )));
+            }
+        };
+        let epoch_transition: u8 = read_next(fd)?;
+        let epoch_transition = if epoch_transition > 0 { true } else { false };
+        Ok(StacksEpochReceipt {
+            header,
+            tx_receipts,
+            matured_rewards,
+            matured_rewards_info,
+            parent_microblocks_cost,
+            anchored_block_cost,
+            parent_burn_block_hash,
+            parent_burn_block_height,
+            parent_burn_block_timestamp,
+            evaluated_epoch,
+            epoch_transition,
+        })
+    }
+}
+
+impl StacksMessageCodec for MinerRewardInfo {
+    fn consensus_serialize<W: Write>(&self, fd: &mut W) -> Result<(), codec_error>
+    where
+        Self: Sized,
+    {
+        write_next(fd, &self.from_block_consensus_hash)?;
+        write_next(fd, &self.from_stacks_block_hash)?;
+        write_next(fd, &self.from_parent_block_consensus_hash)?;
+        write_next(fd, &self.from_parent_stacks_block_hash)?;
+        Ok(())
+    }
+
+    fn consensus_deserialize<R: Read>(fd: &mut R) -> Result<Self, codec_error>
+    where
+        Self: Sized,
+    {
+        let from_block_consensus_hash: ConsensusHash = read_next(fd)?;
+        let from_stacks_block_hash: BlockHeaderHash = read_next(fd)?;
+        let from_parent_block_consensus_hash: ConsensusHash = read_next(fd)?;
+        let from_parent_stacks_block_hash: BlockHeaderHash = read_next(fd)?;
+        Ok(MinerRewardInfo {
+            from_block_consensus_hash,
+            from_stacks_block_hash,
+            from_parent_block_consensus_hash,
+            from_parent_stacks_block_hash,
+        })
     }
 }
 

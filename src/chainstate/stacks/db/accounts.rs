@@ -202,6 +202,44 @@ impl MinerReward {
     }
 }
 
+impl StacksMessageCodec for MinerReward {
+    fn consensus_serialize<W: Write>(&self, fd: &mut W) -> Result<(), codec_error>
+    where
+        Self: Sized,
+    {
+        write_next(fd, &self.address)?;
+        write_next(fd, &self.recipient)?;
+        write_next(fd, &self.coinbase)?;
+        write_next(fd, &self.tx_fees_anchored)?;
+        write_next(fd, &self.tx_fees_streamed_produced)?;
+        write_next(fd, &self.tx_fees_streamed_confirmed)?;
+        write_next(fd, &self.vtxindex)?;
+        Ok(())
+    }
+
+    fn consensus_deserialize<R: Read>(fd: &mut R) -> Result<Self, codec_error>
+    where
+        Self: Sized,
+    {
+        let address: StacksAddress = read_next(fd)?;
+        let recipient: PrincipalData = read_next(fd)?;
+        let coinbase: u128 = read_next(fd)?;
+        let tx_fees_anchored: u128 = read_next(fd)?;
+        let tx_fees_streamed_produced: u128 = read_next(fd)?;
+        let tx_fees_streamed_confirmed: u128 = read_next(fd)?;
+        let vtxindex: u32 = read_next(fd)?;
+        Ok(MinerReward {
+            address,
+            recipient,
+            coinbase,
+            tx_fees_anchored,
+            tx_fees_streamed_produced,
+            tx_fees_streamed_confirmed,
+            vtxindex,
+        })
+    }
+}
+
 impl MinerPaymentSchedule {
     /// If this is a MinerPaymentSchedule for a miner who _confirmed_ a microblock stream, then
     /// this calculates the percentage of that stream this miner is entitled to

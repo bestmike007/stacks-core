@@ -16,11 +16,13 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
+use std::io::{Read, Write};
 use std::{cmp, fmt};
 
 use regex::internal::Exec;
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use serde::{Deserialize, Serialize};
+use stacks_common::codec::*;
 
 use crate::boot_util::boot_code_id;
 use crate::vm::ast::ContractAST;
@@ -1077,6 +1079,43 @@ impl FromSql for ExecutionCost {
         let parsed = serde_json::from_str(&str_val)
             .expect("CORRUPTION: failed to parse ExecutionCost from DB");
         Ok(parsed)
+    }
+}
+
+impl StacksMessageCodec for ExecutionCost {
+    fn consensus_serialize<W: Write>(
+        &self,
+        fd: &mut W,
+    ) -> std::result::Result<(), stacks_common::codec::Error>
+    where
+        Self: Sized,
+    {
+        write_next(fd, &self.write_length)?;
+        write_next(fd, &self.write_count)?;
+        write_next(fd, &self.read_length)?;
+        write_next(fd, &self.read_count)?;
+        write_next(fd, &self.runtime)?;
+        Ok(())
+    }
+
+    fn consensus_deserialize<R: Read>(
+        fd: &mut R,
+    ) -> std::result::Result<Self, stacks_common::codec::Error>
+    where
+        Self: Sized,
+    {
+        let write_length: u64 = read_next(fd)?;
+        let write_count: u64 = read_next(fd)?;
+        let read_length: u64 = read_next(fd)?;
+        let read_count: u64 = read_next(fd)?;
+        let runtime: u64 = read_next(fd)?;
+        Ok(ExecutionCost {
+            write_length,
+            write_count,
+            read_length,
+            read_count,
+            runtime,
+        })
     }
 }
 

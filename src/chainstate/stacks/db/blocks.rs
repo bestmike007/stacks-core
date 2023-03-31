@@ -988,6 +988,27 @@ impl StacksChainState {
         })
     }
 
+    /// Store a block receipt to the chunk store, named by its hash with .receipt file extension
+    pub fn store_block_receipt(
+        blocks_dir: &str,
+        block_receipt: &StacksEpochReceipt,
+    ) -> Result<(), Error> {
+        let block_hash = &block_receipt.header.anchored_header.block_hash();
+        let consensus_hash = &block_receipt.header.consensus_hash;
+        let block_path = StacksChainState::make_block_dir(blocks_dir, consensus_hash, &block_hash)?;
+
+        test_debug!(
+            "Store block receipt {}/{} to {}",
+            consensus_hash,
+            &block_hash,
+            &block_path
+        );
+
+        StacksChainState::atomic_file_store(&block_path, true, |ref mut fd| {
+            block_receipt.consensus_serialize(fd).map_err(Error::CodecError)
+        })
+    }
+
     /// Store an empty block to the chunk store, named by its hash.
     #[cfg(test)]
     fn store_empty_block(
@@ -6779,6 +6800,8 @@ impl StacksChainState {
             &epoch_receipt.header.anchored_header.block_hash(),
             true,
         )?;
+
+        StacksChainState::store_block_receipt(&blocks_path, &epoch_receipt)?;
 
         // this will panic if the Clarity commit fails.
         clarity_commit.commit();
