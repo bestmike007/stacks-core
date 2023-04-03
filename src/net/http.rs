@@ -1507,7 +1507,11 @@ impl HttpRequestType {
             ),
             ("GET", &PATH_GETHEADERS, &HttpRequestType::parse_getheaders),
             ("GET", &PATH_GETBLOCK, &HttpRequestType::parse_getblock),
-            ("GET", &PATH_GETBLOCK_RECEIPT, &HttpRequestType::parse_getblock_receipt),
+            (
+                "GET",
+                &PATH_GETBLOCK_RECEIPT,
+                &HttpRequestType::parse_getblock_receipt,
+            ),
             (
                 "GET",
                 &PATH_GETMICROBLOCKS_INDEXED,
@@ -2128,7 +2132,7 @@ impl HttpRequestType {
     ) -> Result<HttpRequestType, net_error> {
         if preamble.get_content_length() != 0 {
             return Err(net_error::DeserializeError(
-                "Invalid Http request: expected 0-length body for GetBlock".to_string(),
+                "Invalid Http request: expected 0-length body for GetBlockReceipt".to_string(),
             ));
         }
 
@@ -4242,7 +4246,7 @@ impl HttpResponseType {
             }
             HttpResponseType::BlockReceiptStream(ref md) => {
                 // only send the preamble.  The caller will need to figure out how to send along
-                // the block data itself.
+                // the block receipt data itself.
                 HttpResponsePreamble::new_serialized(
                     fd,
                     200,

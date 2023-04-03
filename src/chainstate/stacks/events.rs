@@ -14,7 +14,7 @@ use std::io::{Read, Write};
 
 use crate::chainstate::burn::operations::BlockstackOperationType;
 pub use clarity::vm::events::StacksTransactionEvent;
-use stacks_common::codec::{write_next, Error};
+use stacks_common::codec::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransactionOrigin {
@@ -105,17 +105,7 @@ impl StacksMessageCodec for StacksTransactionReceipt {
     where
         Self: Sized,
     {
-        // pub transaction: TransactionOrigin,
-        // pub events: Vec<StacksTransactionEvent>,
-        // pub post_condition_aborted: bool,
-        // pub result: Value,
-        // pub stx_burned: u128,
-        // pub contract_analysis: Option<ContractAnalysis>,
-        // pub execution_cost: ExecutionCost,
-        // pub microblock_header: Option<StacksMicroblockHeader>,
-        // pub tx_index: u32,
-        // /// This is really a string-formatted CheckError (which can't be clone()'ed)
-        // pub vm_error: Option<String>,
+        // StacksTransactionEvent can be serialized into json, but not the other way around yet.
         todo!()
     }
 }
