@@ -532,6 +532,7 @@ pub trait Streamer {
 #[derive(Debug, PartialEq, Clone)]
 pub enum StreamCursor {
     Block(BlockStreamData),
+    BlockReceipt(BlockReceiptStreamData),
     Microblocks(MicroblockStreamData),
     Headers(HeaderStreamData),
     MempoolTxs(TxStreamData),
@@ -539,6 +540,16 @@ pub enum StreamCursor {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BlockStreamData {
+    /// index block hash of the block to download
+    index_block_hash: StacksBlockId,
+    /// offset into whatever is being read (the blob, or the file in the chunk store)
+    offset: u64,
+    /// total number of bytes read.
+    total_bytes: u64,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct BlockReceiptStreamData {
     /// index block hash of the block to download
     index_block_hash: StacksBlockId,
     /// offset into whatever is being read (the blob, or the file in the chunk store)

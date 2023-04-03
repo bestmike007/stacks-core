@@ -501,6 +501,14 @@ impl StreamCursor {
         })
     }
 
+    pub fn new_block_receipt(index_block_hash: StacksBlockId) -> StreamCursor {
+        StreamCursor::BlockReceipt(BlockReceiptStreamData {
+            index_block_hash: index_block_hash,
+            offset: 0,
+            total_bytes: 0,
+        })
+    }
+
     pub fn new_microblock_confirmed(
         chainstate: &StacksChainState,
         tail_index_microblock_hash: StacksBlockId,
@@ -641,6 +649,7 @@ impl StreamCursor {
     pub fn get_offset(&self) -> u64 {
         match self {
             StreamCursor::Block(ref stream) => stream.offset(),
+            StreamCursor::BlockReceipt(ref stream) => stream.offset(),
             StreamCursor::Microblocks(ref stream) => stream.offset(),
             StreamCursor::Headers(ref stream) => stream.offset(),
             // no-op for mempool txs
@@ -651,6 +660,7 @@ impl StreamCursor {
     pub fn add_more_bytes(&mut self, nw: u64) {
         match self {
             StreamCursor::Block(ref mut stream) => stream.add_bytes(nw),
+            StreamCursor::BlockReceipt(ref mut stream) => stream.add_bytes(nw),
             StreamCursor::Microblocks(ref mut stream) => stream.add_bytes(nw),
             StreamCursor::Headers(ref mut stream) => stream.add_bytes(nw),
             // no-op fo mempool txs
@@ -707,6 +717,9 @@ impl StreamCursor {
                 Ok(num_written)
             }
             StreamCursor::Block(ref mut stream) => chainstate.stream_block(fd, stream, count),
+            StreamCursor::BlockReceipt(ref mut stream) => {
+                chainstate.stream_block_receipt(fd, stream, count)
+            }
         }
     }
 }
@@ -731,6 +744,16 @@ impl Streamer for HeaderStreamData {
 }
 
 impl Streamer for BlockStreamData {
+    fn offset(&self) -> u64 {
+        self.offset
+    }
+    fn add_bytes(&mut self, nw: u64) {
+        self.offset += nw;
+        self.total_bytes += nw;
+    }
+}
+
+impl Streamer for BlockReceiptStreamData {
     fn offset(&self) -> u64 {
         self.offset
     }
@@ -995,7 +1018,9 @@ impl StacksChainState {
     ) -> Result<(), Error> {
         let block_hash = &block_receipt.header.anchored_header.block_hash();
         let consensus_hash = &block_receipt.header.consensus_hash;
-        let block_path = StacksChainState::make_block_dir(blocks_dir, consensus_hash, &block_hash)?;
+        let mut block_path =
+            StacksChainState::make_block_dir(blocks_dir, consensus_hash, &block_hash)?;
+        block_path = block_path + ".receipt";
 
         test_debug!(
             "Store block receipt {}/{} to {}",
@@ -1005,7 +1030,9 @@ impl StacksChainState {
         );
 
         StacksChainState::atomic_file_store(&block_path, true, |ref mut fd| {
-            block_receipt.consensus_serialize(fd).map_err(Error::CodecError)
+            block_receipt
+                .consensus_serialize(fd)
+                .map_err(Error::CodecError)
         })
     }
 
@@ -3647,6 +3674,38 @@ impl StacksChainState {
         StacksChainState::stream_data(fd, stream, &mut file_fd, count)
     }
 
+    /// Stream block receipt data from the chunk store.
+    fn stream_receipt_data_from_chunk_store<W: Write>(
+        blocks_path: &str,
+        fd: &mut W,
+        stream: &mut BlockReceiptStreamData,
+        count: u64,
+    ) -> Result<u64, Error> {
+        let block_path =
+            StacksChainState::get_index_block_path(blocks_path, &stream.index_block_hash)?
+                + ".receipt";
+
+        // The reason we open a file on each call to stream data is because we don't want to
+        // exhaust the supply of file descriptors.  Maybe a future version of this code will do
+        // something like cache the set of open files so we don't have to keep re-opening them.
+        let mut file_fd = fs::OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .truncate(false)
+            .open(&block_path)
+            .map_err(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    error!("File not found: {:?}", &block_path);
+                    Error::NoSuchBlockError
+                } else {
+                    Error::ReadError(e)
+                }
+            })?;
+
+        StacksChainState::stream_data(fd, stream, &mut file_fd, count)
+    }
+
     /// Stream block data from the chain state.
     /// Returns the number of bytes written, and updates `stream` to point to the next point to
     /// read.  Writes the bytes streamed to `fd`.
@@ -3657,6 +3716,18 @@ impl StacksChainState {
         count: u64,
     ) -> Result<u64, Error> {
         StacksChainState::stream_data_from_chunk_store(&self.blocks_path, fd, stream, count)
+    }
+
+    /// Stream block data from the chain state.
+    /// Returns the number of bytes written, and updates `stream` to point to the next point to
+    /// read.  Writes the bytes streamed to `fd`.
+    pub fn stream_block_receipt<W: Write>(
+        &mut self,
+        fd: &mut W,
+        stream: &mut BlockReceiptStreamData,
+        count: u64,
+    ) -> Result<u64, Error> {
+        StacksChainState::stream_receipt_data_from_chunk_store(&self.blocks_path, fd, stream, count)
     }
 
     /// Stream unconfirmed microblocks from the staging DB.  Pull only from the staging DB.
