@@ -1212,6 +1212,52 @@ fn simple_neon_integration() {
 ///  * 5 tenures are mined after 3.0 starts
 ///  * Each tenure has 10 blocks (the coinbase block and 9 interim blocks)
 fn mine_multiple_per_tenure_integration() {
+    let burnblock_height = 106_u128;
+    let reward_cycle = burnblock_height / 150;
+    let stacker_sk = StacksPrivateKey::from_hex(
+        "26f235698d02803955b7418842affbee600fc308936a7ca48bf5778d1ceef9df01",
+    )
+    .unwrap();
+    let signer_sk = stacker_sk.clone();
+    let pox_addr = PoxAddress::from_legacy(
+        AddressHashMode::SerializeP2PKH,
+        tests::to_addr(&stacker_sk).bytes,
+    );
+    let pox_addr_tuple: clarity::vm::Value = pox_addr.clone().as_clarity_tuple().unwrap().into();
+    let signature = make_pox_4_signer_key_signature(
+        &pox_addr,
+        &signer_sk,
+        reward_cycle,
+        &Pox4SignatureTopic::StackStx,
+        CHAIN_ID_TESTNET,
+        12_u128,
+        1_000_000_000_000_000_u128,
+        1,
+    )
+    .unwrap()
+    .to_rsv();
+
+    let signer_pk = StacksPublicKey::from_private(&signer_sk);
+    println!(
+        "{:?}\n{:?}\n{:?}\n{:?}",
+        &pox_addr_tuple,
+        clarity::vm::Value::buff_from(signature).unwrap(),
+        clarity::vm::Value::buff_from(signer_pk.to_bytes_compressed()).unwrap(),
+        std::time::SystemTime::now(),
+    );
+    for i in 0..1000 {
+        let signers = TestSigners::default();
+        let signers_pk = clarity::vm::Value::buff_from(
+            signers
+                .clone()
+                .generate_aggregate_key(i)
+                .compress()
+                .data
+                .to_vec(),
+        )
+        .expect("Failed to serialize aggregate public key");
+        println!("{:?}: {:?}", &i, signers_pk,);
+    }
     if env::var("BITCOIND_TEST") != Ok("1".into()) {
         return;
     }

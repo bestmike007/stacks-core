@@ -300,6 +300,14 @@ impl BlockMinerThread {
             ));
         };
 
+        if reward_cycle > 0 {
+            let mut proposed_block = new_block.clone();
+            stacks::chainstate::nakamoto::test_signers::TestSigners::default()
+                .clone()
+                .sign_nakamoto_block(&mut proposed_block, reward_cycle);
+            return Ok((aggregate_public_key, proposed_block.header.signer_signature));
+        }
+
         let miner_privkey_as_scalar = Scalar::from(miner_privkey.as_slice().clone());
         let mut coordinator = SignCoordinator::new(
             &reward_set,
