@@ -1564,7 +1564,51 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
         db_path: &str,
         marf_opts: MARFOpenOpts,
     ) -> Result<TrieFileStorage<T>, Error> {
-        TrieFileStorage::open_opts(db_path, true, false, marf_opts)
+        // Skip migrations
+        // TrieFileStorage::open_opts(db_path, true, false, marf_opts)
+        let db = marf_sqlite_open(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY, false)?;
+        let cache = TrieCache::new(&marf_opts.cache_strategy);
+        let blobs = if marf_opts.external_blobs {
+            Some(TrieFile::from_db_path(&db_path, true)?)
+        } else {
+            None
+        };
+
+        let ret = TrieFileStorage {
+            db_path: db_path.to_owned(),
+            db,
+            cache,
+            blobs,
+            bench: TrieBenchmark::new(),
+            hash_calculation_mode: marf_opts.hash_calculation_mode,
+
+            data: TrieStorageTransientData {
+                uncommitted_writes: None,
+                cur_block: T::sentinel(),
+                cur_block_id: None,
+
+                read_count: 0,
+                read_backptr_count: 0,
+                read_node_count: 0,
+                read_leaf_count: 0,
+
+                write_count: 0,
+                write_node_count: 0,
+                write_leaf_count: 0,
+
+                trie_ancestor_hash_bytes_cache: None,
+
+                readonly: true,
+                unconfirmed: false,
+            },
+
+            // used in testing in order to short-circuit block-height lookups
+            //   when the trie struct is tested outside of marf.rs usage
+            #[cfg(test)]
+            test_genesis_block: None,
+        };
+
+        Ok(ret)
     }
 
     pub fn open_unconfirmed(

@@ -1199,6 +1199,14 @@ impl StacksChainState {
         Ok(marf)
     }
 
+    pub fn open_index_readonly(marf_path: &str) -> Result<MARF<StacksBlockId>, db_error> {
+        test_debug!("Open MARF index at {}", marf_path);
+        let mut open_opts = MARFOpenOpts::default();
+        open_opts.external_blobs = true;
+        let marf = MARF::from_path_readonly(marf_path, open_opts).map_err(db_error::IndexError)?;
+        Ok(marf)
+    }
+
     /// Idempotent `mkdir -p`
     fn mkdirs(path: &PathBuf) -> Result<(), Error> {
         match fs::metadata(path) {

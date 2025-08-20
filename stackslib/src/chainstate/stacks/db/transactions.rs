@@ -414,7 +414,7 @@ pub fn handle_clarity_runtime_error(error: clarity_error) -> ClarityRuntimeTxErr
 
 impl StacksChainState {
     /// Get the payer account
-    fn get_payer_account<T: ClarityConnection>(
+    pub fn get_payer_account<T: ClarityConnection>(
         clarity_tx: &mut T,
         tx: &StacksTransaction,
     ) -> StacksAccount {
@@ -492,7 +492,7 @@ impl StacksChainState {
     /// Pay the transaction fee (but don't credit it to the miner yet).
     /// Does not touch the account nonce.
     /// Consumes the account object, since it invalidates it.
-    fn pay_transaction_fee(
+    pub fn pay_transaction_fee(
         clarity_tx: &mut ClarityTransactionConnection,
         fee: u64,
         payer_account: StacksAccount,
@@ -1055,6 +1055,7 @@ impl StacksChainState {
                 let cost_before = clarity_tx.cost_so_far();
                 let sponsor = tx.sponsor_address().map(|a| a.to_account_principal());
                 let epoch_id = clarity_tx.get_epoch();
+                let start_ts = std::time::Instant::now();
 
                 let contract_call_resp = clarity_tx.run_contract_call(
                     &origin_account.principal,
@@ -1090,7 +1091,8 @@ impl StacksChainState {
                               "function_name" => %contract_call.function_name,
                               "function_args" => %VecDisplay(&contract_call.function_args),
                               "return_value" => %return_value,
-                              "cost" => ?total_cost);
+                              "cost" => ?total_cost,
+                              "duration" => ?start_ts.elapsed());
                         (return_value, asset_map, events, None)
                     }
                     Err(e) => match handle_clarity_runtime_error(e) {

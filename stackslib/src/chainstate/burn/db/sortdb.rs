@@ -2822,6 +2822,14 @@ impl SortitionDB {
         Ok(marf)
     }
 
+    fn open_index_readonly(index_path: &str) -> Result<MARF<SortitionId>, db_error> {
+        test_debug!("Open index at {}", index_path);
+        let open_opts = MARFOpenOpts::default();
+        let marf =
+            MARF::from_path_readonly(index_path, open_opts).map_err(|_e| db_error::Corruption)?;
+        Ok(marf)
+    }
+
     /// Open the database on disk.  It must already exist and be instantiated.
     /// It's best not to call this if you are able to call connect().  If you must call this, do so
     /// after you call connect() somewhere else, since connect() performs additional validations.
@@ -2837,7 +2845,11 @@ impl SortitionDB {
             index_path
         );
 
-        let marf = SortitionDB::open_index(&index_path)?;
+        let marf = if readwrite {
+            SortitionDB::open_index(&index_path)?
+        } else {
+            SortitionDB::open_index_readonly(&index_path)?
+        };
         let (first_block_height, first_burn_header_hash) =
             SortitionDB::get_first_block_height_and_hash(marf.sqlite_conn())?;
 
