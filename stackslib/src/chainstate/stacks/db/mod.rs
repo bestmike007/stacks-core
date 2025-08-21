@@ -66,8 +66,8 @@ use crate::chainstate::stacks::{
     C32_ADDRESS_VERSION_TESTNET_SINGLESIG, *,
 };
 use crate::clarity_vm::clarity::{
-    ClarityBlockConnection, ClarityConnection, ClarityInstance, ClarityReadOnlyConnection,
-    Error as clarity_error, PreCommitClarityBlock,
+    ClarityBlockConnection, ClarityBlockConnectionFactory, ClarityConnection, ClarityInstance,
+    ClarityReadOnlyConnection, Error as clarity_error, PreCommitClarityBlock,
 };
 use crate::clarity_vm::database::marf::MarfedKV;
 use crate::clarity_vm::database::HeadersDBConn;
@@ -2017,7 +2017,7 @@ impl StacksChainState {
     /// Begin processing an epoch's transactions within the context of a chainstate transaction
     pub fn chainstate_block_begin<'a, 'b>(
         chainstate_tx: &'b ChainstateTx<'b>,
-        clarity_instance: &'a mut ClarityInstance,
+        clarity_instance: &'a mut dyn ClarityBlockConnectionFactory,
         burn_dbconn: &'b dyn BurnStateDB,
         parent_consensus_hash: &ConsensusHash,
         parent_block: &BlockHeaderHash,
@@ -2281,7 +2281,7 @@ impl StacksChainState {
     fn inner_clarity_tx_begin<'a, 'b>(
         conf: DBConfig,
         headers_db: &'b dyn HeadersDB,
-        clarity_instance: &'a mut ClarityInstance,
+        clarity_instance: &'a mut dyn ClarityBlockConnectionFactory,
         burn_dbconn: &'b dyn BurnStateDB,
         parent_consensus_hash: &ConsensusHash,
         parent_block: &BlockHeaderHash,

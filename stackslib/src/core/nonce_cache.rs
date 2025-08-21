@@ -226,7 +226,7 @@ mod tests {
     use super::*;
     use crate::chainstate::stacks::db::test::{chainstate_path, instantiate_chainstate};
     use crate::chainstate::stacks::index::ClarityMarfTrieId;
-    use crate::clarity_vm::clarity::ClarityInstance;
+    use crate::clarity_vm::clarity::{ClarityBlockConnectionFactory, ClarityInstance};
     use crate::clarity_vm::database::marf::MarfedKV;
     use crate::core::MemPoolDB;
 

@@ -89,6 +89,16 @@ pub struct ClarityInstance {
     chain_id: u32,
 }
 
+pub trait ClarityBlockConnectionFactory {
+    fn begin_block<'a, 'b>(
+        &'a mut self,
+        current: &StacksBlockId,
+        next: &StacksBlockId,
+        header_db: &'b dyn HeadersDB,
+        burn_state_db: &'b dyn BurnStateDB,
+    ) -> ClarityBlockConnection<'a, 'b>;
+}
+
 ///
 /// This struct represents a "sealed" or "finished" Clarity block that
 /// has *not* yet been committed. This struct allows consumers of the
@@ -260,6 +270,42 @@ impl ClarityBlockConnection<'_, '_> {
         Ok(result?)
     }
 }
+impl ClarityBlockConnectionFactory for ClarityInstance {
+    fn begin_block<'a, 'b>(
+        &'a mut self,
+        current: &StacksBlockId,
+        next: &StacksBlockId,
+        header_db: &'b dyn HeadersDB,
+        burn_state_db: &'b dyn BurnStateDB,
+    ) -> ClarityBlockConnection<'a, 'b> {
+        let mut datastore = self.datastore.begin(current, next);
+
+        let epoch = Self::get_epoch_of(current, header_db, burn_state_db);
+        let cost_track = {
+            let mut clarity_db = datastore.as_clarity_db(&NULL_HEADER_DB, &NULL_BURN_STATE_DB);
+            Some(
+                LimitedCostTracker::new(
+                    self.mainnet,
+                    self.chain_id,
+                    epoch.block_limit.clone(),
+                    &mut clarity_db,
+                    epoch.epoch_id,
+                )
+                .expect("FAIL: problem instantiating cost tracking"),
+            )
+        };
+
+        ClarityBlockConnection {
+            datastore: Box::new(datastore),
+            header_db,
+            burn_state_db,
+            cost_track,
+            mainnet: self.mainnet,
+            chain_id: self.chain_id,
+            epoch: epoch.epoch_id,
+        }
+    }
+}
 
 impl ClarityInstance {
     pub fn new(mainnet: bool, chain_id: u32, datastore: MarfedKV) -> ClarityInstance {
@@ -301,41 +347,6 @@ impl ClarityInstance {
         burn_state_db
             .get_stacks_epoch(burn_height)
             .unwrap_or_else(|| panic!("Failed to get Stacks epoch for height = {}", burn_height))
-    }
-
-    pub fn begin_block<'a, 'b>(
-        &'a mut self,
-        current: &StacksBlockId,
-        next: &StacksBlockId,
-        header_db: &'b dyn HeadersDB,
-        burn_state_db: &'b dyn BurnStateDB,
-    ) -> ClarityBlockConnection<'a, 'b> {
-        let mut datastore = self.datastore.begin(current, next);
-
-        let epoch = Self::get_epoch_of(current, header_db, burn_state_db);
-        let cost_track = {
-            let mut clarity_db = datastore.as_clarity_db(&NULL_HEADER_DB, &NULL_BURN_STATE_DB);
-            Some(
-                LimitedCostTracker::new(
-                    self.mainnet,
-                    self.chain_id,
-                    epoch.block_limit.clone(),
-                    &mut clarity_db,
-                    epoch.epoch_id,
-                )
-                .expect("FAIL: problem instantiating cost tracking"),
-            )
-        };
-
-        ClarityBlockConnection {
-            datastore: Box::new(datastore),
-            header_db,
-            burn_state_db,
-            cost_track,
-            mainnet: self.mainnet,
-            chain_id: self.chain_id,
-            epoch: epoch.epoch_id,
-        }
     }
 
     pub fn begin_genesis_block<'a, 'b>(

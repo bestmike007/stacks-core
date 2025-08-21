@@ -12,7 +12,7 @@ use stacks_common::types::chainstate::StacksBlockId;
 use stacks_common::types::StacksEpochId;
 
 use crate::chainstate::stacks::index::ClarityMarfTrieId;
-use crate::clarity_vm::clarity::ClarityInstance;
+use crate::clarity_vm::clarity::{ClarityBlockConnectionFactory, ClarityInstance};
 use crate::clarity_vm::database::marf::MarfedKV;
 
 fn dependency_edge_counting_runtime(

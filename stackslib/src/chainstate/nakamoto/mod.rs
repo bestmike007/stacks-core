@@ -83,7 +83,9 @@ use crate::chainstate::stacks::{
     TenureChangeCause, MINER_BLOCK_CONSENSUS_HASH, MINER_BLOCK_HEADER_HASH,
 };
 use crate::clarity::vm::clarity::TransactionConnection;
-use crate::clarity_vm::clarity::{ClarityInstance, PreCommitClarityBlock};
+use crate::clarity_vm::clarity::{
+    ClarityBlockConnectionFactory, ClarityInstance, PreCommitClarityBlock,
+};
 use crate::clarity_vm::database::SortitionDBRef;
 use crate::core::{
     BOOT_BLOCK_HASH, BURNCHAIN_TX_SEARCH_WINDOW, NAKAMOTO_SIGNER_BLOCK_APPROVAL_THRESHOLD,
@@ -3785,7 +3787,7 @@ impl NakamotoChainState {
     /// `SetupBlockResult`.  Used by the Nakamoto miner, and called by Self::setup_normal_block()
     pub fn setup_block<'a, 'b>(
         chainstate_tx: &'b mut ChainstateTx,
-        clarity_instance: &'a mut ClarityInstance,
+        clarity_instance: &'a mut dyn ClarityBlockConnectionFactory,
         sortition_dbconn: &'b dyn SortitionDBRef,
         first_block_height: u64,
         pox_constants: &PoxConstants,
@@ -3949,7 +3951,7 @@ impl NakamotoChainState {
     /// represents whether the epoch transition has been applied.
     fn inner_setup_block<'a, 'b>(
         chainstate_tx: &'b mut ChainstateTx,
-        clarity_instance: &'a mut ClarityInstance,
+        clarity_instance: &'a mut dyn ClarityBlockConnectionFactory,
         sortition_dbconn: &'b dyn SortitionDBRef,
         first_block_height: u64,
         pox_constants: &PoxConstants,

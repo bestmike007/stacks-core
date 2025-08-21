@@ -35,7 +35,9 @@ use stacks_common::types::StacksEpochId;
 
 use crate::chainstate::stacks::boot::{BOOT_CODE_COSTS_2, BOOT_CODE_COSTS_3};
 use crate::chainstate::stacks::index::ClarityMarfTrieId;
-use crate::clarity_vm::clarity::{ClarityBlockConnection, ClarityInstance, Error as ClarityError};
+use crate::clarity_vm::clarity::{
+    ClarityBlockConnection, ClarityBlockConnectionFactory, ClarityInstance, Error as ClarityError,
+};
 use crate::clarity_vm::database::marf::MarfedKV;
 use crate::clarity_vm::database::MemoryBackingStore;
 use crate::util_lib::boot::boot_code_id;
