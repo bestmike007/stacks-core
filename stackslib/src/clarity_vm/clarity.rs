@@ -89,6 +89,8 @@ pub struct ClarityInstance {
     chain_id: u32,
 }
 
+type EphemeralClarityInstance<'a> = &'a mut ClarityInstance;
+
 pub trait ClarityBlockConnectionFactory {
     fn begin_block<'a, 'b>(
         &'a mut self,
@@ -270,6 +272,7 @@ impl ClarityBlockConnection<'_, '_> {
         Ok(result?)
     }
 }
+
 impl ClarityBlockConnectionFactory for ClarityInstance {
     fn begin_block<'a, 'b>(
         &'a mut self,
@@ -297,6 +300,43 @@ impl ClarityBlockConnectionFactory for ClarityInstance {
 
         ClarityBlockConnection {
             datastore: Box::new(datastore),
+            header_db,
+            burn_state_db,
+            cost_track,
+            mainnet: self.mainnet,
+            chain_id: self.chain_id,
+            epoch: epoch.epoch_id,
+        }
+    }
+}
+impl ClarityBlockConnectionFactory for EphemeralClarityInstance<'_> {
+    fn begin_block<'a, 'b>(
+        &'a mut self,
+        current: &StacksBlockId,
+        next: &StacksBlockId,
+        header_db: &'b dyn HeadersDB,
+        burn_state_db: &'b dyn BurnStateDB,
+    ) -> ClarityBlockConnection<'a, 'b> {
+        // TODO: handle errors
+        let mut datastore = self.datastore.begin_ephemeral(current, next).unwrap();
+
+        let epoch = ClarityInstance::get_epoch_of(current, header_db, burn_state_db);
+        let cost_track = {
+            let mut clarity_db = ClarityDatabase::new(datastore.as_mut(), header_db, burn_state_db);
+            Some(
+                LimitedCostTracker::new(
+                    self.mainnet,
+                    self.chain_id,
+                    epoch.block_limit.clone(),
+                    &mut clarity_db,
+                    epoch.epoch_id,
+                )
+                .expect("FAIL: problem instantiating cost tracking"),
+            )
+        };
+
+        ClarityBlockConnection {
+            datastore,
             header_db,
             burn_state_db,
             cost_track,
@@ -620,6 +660,12 @@ impl ClarityInstance {
     ) -> ClarityReadOnlyConnection<'a> {
         self.read_only_connection_checked(at_block, header_db, burn_state_db)
             .unwrap_or_else(|_| panic!("BUG: failed to open block {}", at_block))
+    }
+
+    pub fn as_ephemeral_clarity_block_connection_factory<'a>(
+        &'a mut self,
+    ) -> &'a mut dyn ClarityBlockConnectionFactory {
+        self as EphemeralClarityInstance
     }
 
     /// Open a read-only connection at `at_block`. This will be evaluated in the Stacks epoch that

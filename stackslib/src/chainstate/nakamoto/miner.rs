@@ -385,6 +385,23 @@ impl NakamotoBlockBuilder {
         burn_dbconn: &'a SortitionHandleConn,
         info: &'b mut MinerTenureInfo<'a>,
     ) -> Result<ClarityTx<'b, 'b>, Error> {
+        self.inner_tenure_begin(burn_dbconn, info, false)
+    }
+
+    pub fn ephemeral_tenure_begin<'a, 'b>(
+        &mut self,
+        burn_dbconn: &'a SortitionHandleConn,
+        info: &'b mut MinerTenureInfo<'a>,
+    ) -> Result<ClarityTx<'b, 'b>, Error> {
+        self.inner_tenure_begin(burn_dbconn, info, true)
+    }
+
+    fn inner_tenure_begin<'a, 'b>(
+        &mut self,
+        burn_dbconn: &'a SortitionHandleConn,
+        info: &'b mut MinerTenureInfo<'a>,
+        ephemeral: bool,
+    ) -> Result<ClarityTx<'b, 'b>, Error> {
         let Some(block_commit) = info.tenure_block_commit_opt.as_ref() else {
             return Err(Error::InvalidStacksBlock(
                 "Block-commit is required; cannot mine a shadow block".into(),
@@ -397,7 +414,12 @@ impl NakamotoBlockBuilder {
             ..
         } = NakamotoChainState::setup_block(
             &mut info.chainstate_tx,
-            info.clarity_instance,
+            if ephemeral {
+                info.clarity_instance
+                    .as_ephemeral_clarity_block_connection_factory()
+            } else {
+                info.clarity_instance
+            },
             burn_dbconn,
             burn_dbconn.context.first_block_height,
             &burn_dbconn.context.pox_constants,

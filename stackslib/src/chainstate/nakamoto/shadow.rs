@@ -67,7 +67,7 @@ use crate::chainstate::stacks::{
     TransactionVersion,
 };
 use crate::clarity::vm::types::StacksAddressExtensions;
-use crate::clarity_vm::clarity::ClarityInstance;
+use crate::clarity_vm::clarity::ClarityBlockConnectionFactory;
 use crate::clarity_vm::database::SortitionDBRef;
 use crate::net::Error as NetError;
 use crate::util_lib::db::{query_row, u64_to_sql, Error as DBError};
@@ -363,7 +363,7 @@ impl NakamotoChainState {
     /// Called to begin processing a shadow block
     pub(crate) fn setup_shadow_block_processing<'a, 'b>(
         chainstate_tx: &'b mut ChainstateTx,
-        clarity_instance: &'a mut ClarityInstance,
+        clarity_instance: &'a mut dyn ClarityBlockConnectionFactory,
         sortition_dbconn: &'b dyn SortitionDBRef,
         first_block_height: u64,
         pox_constants: &PoxConstants,
