@@ -14,19 +14,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use clarity::types::StacksEpochId;
 use clarity::vm::analysis::CheckErrors;
 use clarity::vm::ast::parser::v1::CLARITY_NAME_REGEX;
-use clarity::vm::clarity::ClarityConnection;
+use clarity::vm::clarity::{ClarityConnection, TransactionConnection};
 use clarity::vm::costs::{ExecutionCost, LimitedCostTracker};
-use clarity::vm::errors::Error::Unchecked;
+use clarity::vm::errors::Error::{Interpreter, Unchecked};
 use clarity::vm::errors::{Error as ClarityRuntimeError, InterpreterError};
 use clarity::vm::representations::{CONTRACT_NAME_REGEX_STRING, STANDARD_PRINCIPAL_REGEX_STRING};
 use clarity::vm::types::{PrincipalData, QualifiedContractIdentifier};
-use clarity::vm::{ClarityName, ContractName, SymbolicExpression, Value};
+use clarity::vm::{ClarityName, ClarityVersion, ContractName, SymbolicExpression, Value};
 use regex::{Captures, Regex};
 use stacks_common::types::chainstate::StacksAddress;
 use stacks_common::types::net::PeerHost;
 
+use crate::clarity_vm::clarity::ClarityTransactionConnection;
+use crate::clarity_vm::database::marf::ReadOnlyMarfStore;
 use crate::net::http::{
     parse_json, Error, HttpContentType, HttpNotFound, HttpRequest, HttpRequestContents,
     HttpRequestPreamble, HttpResponse, HttpResponseContents, HttpResponsePayload,
@@ -210,16 +213,20 @@ impl RPCRequestHandler for RPCCallReadOnlyRequestHandler {
                     .map(|x| SymbolicExpression::atom_value(x.clone()))
                     .collect();
 
+                let burndb = &sortdb
+                    .index_handle_at_block(chainstate, &tip)
+                    .map_err(|_| {
+                        ClarityRuntimeError::from(InterpreterError::MarfFailure(
+                            "Chain tip not found".to_string(),
+                        ))
+                    })?;
                 let mainnet = chainstate.mainnet;
                 let chain_id = chainstate.chain_id;
                 let mut cost_limit = self.read_only_call_limit.clone();
                 cost_limit.write_length = 0;
                 cost_limit.write_count = 0;
-
-                chainstate.maybe_read_only_clarity_tx(
-                    &sortdb.index_handle_at_block(chainstate, &tip)?,
-                    &tip,
-                    |clarity_tx| {
+                let (epoch, mut cost_track, _clarity_version) = chainstate
+                    .with_read_only_clarity_tx(burndb, &tip, |clarity_tx| {
                         let epoch = clarity_tx.get_epoch();
                         let cost_track = clarity_tx
                             .with_clarity_db_readonly(|clarity_db| {
@@ -231,6 +238,7 @@ impl RPCRequestHandler for RPCCallReadOnlyRequestHandler {
                                 ClarityRuntimeError::from(InterpreterError::CostContractLoadFailure)
                             })?;
 
+                        // TODO: not necessary to load the clarity version here?
                         let clarity_version = clarity_tx
                             .with_analysis_db_readonly(|analysis_db| {
                                 analysis_db.get_clarity_version(&contract_identifier)
@@ -241,36 +249,49 @@ impl RPCRequestHandler for RPCCallReadOnlyRequestHandler {
                                     &contract_identifier
                                 )))
                             })?;
-
-                        clarity_tx.with_readonly_clarity_env(
-                            mainnet,
-                            chain_id,
-                            clarity_version,
-                            sender,
-                            sponsor,
-                            cost_track,
-                            |env| {
-                                // we want to execute any function as long as no actual writes are made as
-                                // opposed to be limited to purely calling `define-read-only` functions,
-                                // so use `read_only = false`.  This broadens the number of functions that
-                                // can be called, and also circumvents limitations on `define-read-only`
-                                // functions that can not use `contrac-call?`, even when calling other
-                                // read-only functions
-                                env.execute_contract(
-                                    &contract_identifier,
-                                    function.as_str(),
-                                    &args,
-                                    false,
-                                )
-                            },
-                        )
-                    },
-                )
+                        Ok::<
+                            (StacksEpochId, Option<LimitedCostTracker>, ClarityVersion),
+                            ClarityRuntimeError,
+                        >((epoch, Some(cost_track), clarity_version))
+                    })
+                    .ok_or(ClarityRuntimeError::from(InterpreterError::MarfFailure(
+                        "Chain tip not found".to_string(),
+                    )))??;
+                chainstate.clarity_state.with_marf(|marf| {
+                    let mut clarity_db = ReadOnlyMarfStore::from_marf(marf, tip.clone());
+                    let mut clarity_tx = ClarityTransactionConnection::new(
+                        &mut clarity_db,
+                        &chainstate.state_index,
+                        burndb,
+                        &mut cost_track,
+                        mainnet,
+                        chain_id,
+                        epoch,
+                    );
+                    Ok::<Result<Value, clarity::vm::errors::Error>, ClarityRuntimeError>(
+                        clarity_tx
+                            .with_abort_callback(
+                                |vm_env| {
+                                    vm_env
+                                        .execute_transaction(
+                                            sender,
+                                            sponsor,
+                                            contract_identifier,
+                                            function.as_str(),
+                                            &args,
+                                        )
+                                        .map_err(clarity::vm::errors::Error::from)
+                                },
+                                |_, _| Some("read-only".to_string()),
+                            )
+                            .map(|v| v.0),
+                    )
+                })?
             });
 
         // decode the response
         let data_resp = match data_resp {
-            Ok(Some(Ok(data))) => {
+            Ok(data) => {
                 let hex_result = data
                     .serialize_to_hex()
                     .map_err(|e| NetError::SerializeError(format!("{:?}", &e)))?;
@@ -281,7 +302,7 @@ impl RPCRequestHandler for RPCCallReadOnlyRequestHandler {
                     cause: None,
                 }
             }
-            Ok(Some(Err(e))) => match e {
+            Err(e) => match e {
                 Unchecked(CheckErrors::CostBalanceExceeded(actual_cost, _))
                     if actual_cost.write_count > 0 =>
                 {
@@ -291,20 +312,20 @@ impl RPCRequestHandler for RPCCallReadOnlyRequestHandler {
                         cause: Some("NotReadOnly".to_string()),
                     }
                 }
+                Interpreter(InterpreterError::MarfFailure(e)) if &e == "Chain tip not found" => {
+                    return StacksHttpResponse::new_error(
+                        &preamble,
+                        &HttpNotFound::new("Chain tip not found".to_string()),
+                    )
+                    .try_into_contents()
+                    .map_err(NetError::from);
+                }
                 _ => CallReadOnlyResponse {
                     okay: false,
                     result: None,
                     cause: Some(e.to_string()),
                 },
             },
-            Ok(None) | Err(_) => {
-                return StacksHttpResponse::new_error(
-                    &preamble,
-                    &HttpNotFound::new("Chain tip not found".to_string()),
-                )
-                .try_into_contents()
-                .map_err(NetError::from);
-            }
         };
 
         let mut preamble = HttpResponsePreamble::ok_json(&preamble);

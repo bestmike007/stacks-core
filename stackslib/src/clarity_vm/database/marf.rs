@@ -273,6 +273,13 @@ pub struct ReadOnlyMarfStore<'a> {
 }
 
 impl ReadOnlyMarfStore<'_> {
+    pub fn from_marf<'a>(
+        marf: &'a mut MARF<StacksBlockId>,
+        chain_tip: StacksBlockId,
+    ) -> ReadOnlyMarfStore<'a> {
+        ReadOnlyMarfStore { marf, chain_tip }
+    }
+
     pub fn as_clarity_db<'b>(
         &'b mut self,
         headers_db: &'b dyn HeadersDB,
